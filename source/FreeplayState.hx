@@ -52,10 +52,10 @@ class FreeplayState extends MusicBeatState
 
 	override function create()
 	{
-		#if MODS_ALLOWED
-		Paths.destroyLoadedImages();
-		#end
+		Paths.clearStoredMemory();
+		Paths.clearUnusedMemory();
 		
+		persistentUpdate = true;
 		PlayState.isStoryMode = false;
 		WeekData.reloadWeekFiles(false);
 
@@ -89,7 +89,7 @@ class FreeplayState extends MusicBeatState
 
 		/*		//KIND OF BROKEN NOW AND ALSO PRETTY USELESS//
 
-		var initSonglist = CoolUtil.coolTextFile(Main.getDataPath() + Paths.txt('freeplaySonglist'));
+		var initSonglist = CoolUtil.coolTextFile(Paths.txt('freeplaySonglist'));
 		for (i in 0...initSonglist.length)
 		{
 			if(initSonglist[i] != null && initSonglist[i].length > 0) {
@@ -101,6 +101,7 @@ class FreeplayState extends MusicBeatState
 		bg = new FlxSprite().loadGraphic(Paths.image('menuDesat'));
 		bg.antialiasing = ClientPrefs.globalAntialiasing;
 		add(bg);
+		bg.screenCenter();
 
 		grpSongs = new FlxTypedGroup<Alphabet>();
 		add(grpSongs);
@@ -122,7 +123,8 @@ class FreeplayState extends MusicBeatState
 
 			// songText.x += 40;
 			// DONT PUT X IN THE FIRST PARAMETER OF new ALPHABET() !!
-			// songText.screenCenter(X);
+			// // songText.screenCenter(X);
+songText.x += -700;
 		}
 		WeekData.setDirectoryFromWeek();
 
@@ -175,7 +177,6 @@ class FreeplayState extends MusicBeatState
 		textBG.alpha = 0.6;
 		add(textBG);
 
-		#if desktop
 		#if PRELOAD_ALL
 		var leText:String = "Press SPACE to listen to the Song / Press CTRL to open the Gameplay Changers Menu / Press RESET to Reset your Score and Accuracy.";
 		var size:Int = 16;
@@ -183,30 +184,16 @@ class FreeplayState extends MusicBeatState
 		var leText:String = "Press CTRL to open the Gameplay Changers Menu / Press RESET to Reset your Score and Accuracy.";
 		var size:Int = 18;
 		#end
-		#else
-		#if PRELOAD_ALL
-		var leText:String = "Press X to listen to the Song / Press RED to open the Gameplay Changers Menu / Press Y to Reset your Score and Accuracy.";
-		var size:Int = 16;
-		#else
-		var leText:String = "Press RED to open the Gameplay Changers Menu / Press Y to Reset your Score and Accuracy.";
-		var size:Int = 18;
-		#end		
-		#end
-				
 		var text:FlxText = new FlxText(textBG.x, textBG.y + 4, FlxG.width, leText, size);
 		text.setFormat(Paths.font("vcr.ttf"), size, FlxColor.WHITE, RIGHT);
 		text.scrollFactor.set();
 		add(text);
-
-		#if mobileC
-		addVirtualPad(FULL, A_B_X_Y_D);
-		#end
-
 		super.create();
 	}
 
 	override function closeSubState() {
 		changeSelection(0, false);
+		persistentUpdate = true;
 		super.closeSubState();
 	}
 
@@ -233,6 +220,7 @@ class FreeplayState extends MusicBeatState
 
 	var instPlaying:Int = -1;
 	private static var vocals:FlxSound = null;
+	var holdTime:Float = 0;
 	override function update(elapsed:Float)
 	{
 		if (FlxG.sound.music.volume < 0.7)
@@ -263,19 +251,36 @@ class FreeplayState extends MusicBeatState
 		var upP = controls.UI_UP_P;
 		var downP = controls.UI_DOWN_P;
 		var accepted = controls.ACCEPT;
-		var space = FlxG.keys.justPressed.SPACE#if mobileC || _virtualpad.buttonX.justPressed #end;
-		var ctrl = FlxG.keys.justPressed.CONTROL#if mobileC || _virtualpad.buttonD.justPressed #end;
+		var space = FlxG.keys.justPressed.SPACE;
+		var ctrl = FlxG.keys.justPressed.CONTROL;
 
 		var shiftMult:Int = 1;
 		if(FlxG.keys.pressed.SHIFT) shiftMult = 3;
 
-		if (upP)
+		if(songs.length > 1)
 		{
-			changeSelection(-shiftMult);
-		}
-		if (downP)
-		{
-			changeSelection(shiftMult);
+			if (upP)
+			{
+				changeSelection(-shiftMult);
+				holdTime = 0;
+			}
+			if (downP)
+			{
+				changeSelection(shiftMult);
+				holdTime = 0;
+			}
+
+			if(controls.UI_DOWN || controls.UI_UP)
+			{
+				var checkLastHold:Int = Math.floor((holdTime - 0.5) * 10);
+				holdTime += elapsed;
+				var checkNewHold:Int = Math.floor((holdTime - 0.5) * 10);
+
+				if(holdTime > 0.5 && checkNewHold - checkLastHold > 0)
+				{
+					changeSelection((checkNewHold - checkLastHold) * (controls.UI_UP ? -shiftMult : shiftMult));
+				}
+			}
 		}
 
 		if (controls.UI_LEFT_P)
@@ -286,6 +291,7 @@ class FreeplayState extends MusicBeatState
 
 		if (controls.BACK)
 		{
+			persistentUpdate = false;
 			if(colorTween != null) {
 				colorTween.cancel();
 			}
@@ -295,6 +301,7 @@ class FreeplayState extends MusicBeatState
 
 		if(ctrl)
 		{
+			persistentUpdate = false;
 			openSubState(new GameplayChangersSubstate());
 		}
 		else if(space)
@@ -325,6 +332,7 @@ class FreeplayState extends MusicBeatState
 
 		else if (accepted)
 		{
+			persistentUpdate = false;
 			var songLowercase:String = Paths.formatToSongPath(songs[curSelected].songName);
 			var poop:String = Highscore.formatSong(songLowercase, curDifficulty);
 			/*#if MODS_ALLOWED
@@ -357,7 +365,7 @@ class FreeplayState extends MusicBeatState
 					
 			destroyFreeplayVocals();
 		}
-		else if(controls.RESET #if mobileC || _virtualpad.buttonY.justPressed #end)
+		else if(controls.RESET)
 		{
 			openSubState(new ResetScoreSubState(songs[curSelected].songName, curDifficulty, songs[curSelected].songCharacter));
 			FlxG.sound.play(Paths.sound('scrollMenu'));
